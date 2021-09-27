@@ -1,0 +1,176 @@
+---
+title: "análisis guanacos ML hasta 2020"
+author: "LRP"
+date: "25 June 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+Trabajo con el conjunto de datos compilado desde 2007, con aclaraciones correspondientes (2007 datos poco confiables, 2008 incompletos, 2015marzo solo primera vuelta) para guanaco y choique. 
+
+El objetivo es fabricar los conjuntos de datos que voy a usar:
+guanaco y choique por separado, para cada tiempo y estrato.
+Para ordenar, filtrar, acomodar, resumir voy a usar funciones de paquetes del tidyverse
+
+```{r}
+library(tidyverse)
+```
+
+```{r}
+data <- read_csv("guanacosML.csv",
+                 col_types = cols(
+                   est = col_factor(levels=c("ver","oto","inv","pri")),
+                   Fecha = col_date(format = "%d/%m/%Y"),
+                   Region.Label = col_factor(levels=c("ALTO","BAJO")),
+                   Sample.Label = col_factor(),
+                   Especie = col_factor()
+                   )
+                 )
+```
+
+Ahora limpio en pasos:
+1. elimino las variables que no voy a usar en esta etapa y que generan problemas:
+(Lat Lon Machos Hembras GPSID Habitat Condiciones X26 ObsID)
+2. filtro años que tienen problemas, excluyo 2007 y 2008 
+3. filtro obs de especies que no son G ni CH
+4. renombro transectas para que coincidan las 21
+5. calculo distancia perpendicular y elimino distancia radial y ángulo
+
+```{r}
+limpia <- data %>% 
+  select(-Lat, -Lon, -Machos, -Hembras, -GPSID, -Habitat, -Condiciones, -...26, -ObsID) %>% 
+  filter(Year != 2007 & Year != 2008) %>%
+  filter(Especie == "G" | Especie == "CH")  %>% 
+  mutate(Sample.Label = fct_collapse(Sample.Label,
+    ANT1 = c("Antena 1", "ANTENA 1"),
+    ANT2 = c("Antena 2", "ANTENA 2"),
+    LAG1 = c("Laguna 1", "LAGUNA 1"),
+    LAG2 = c("Laguna 2", "LAGUNA 2"),
+    LAG3 = c("Laguna 3", "LAGUNA 3"),
+    RP63A1 = c("RP63 A1", "Rp63 A1"),
+    RP63B1 = c("RP63 B1", "Rp63 B1"),
+    RP63B2 = c("RP63 B2", "Rp63 B2"),
+    RP63B3 = c("RP63 B3"),
+    RP63B4 = c("RP63 B4", "Rp63 B4"),
+    RP63B5 = c("RP63 B5"),
+    TRI1 = c("TRIANGULO 1", "Triangulo 1"),
+    TRI2 = c("TRIANGULO 2", "Triangulo 2"),
+    LIMS1 = c("limite sur 1","LIMITE SUR 1","Limite Sur 1"),
+    LIMS2 = c("LIMITE SUR 2","Limite Sur 2")
+    )
+  ) %>% 
+  mutate(distance = abs(sin(Angle)*RadialDistance)) %>% 
+  select(-Angle, -RadialDistance)
+
+
+```
+
+limpia %>% count(Especie)
+Me quedan 4736 observaciones de registros de guanaco y choique entre 2009 y 2021.
+4172 guanacos y 564 choiques
+
+Reviso cuántos y cómo son los datos faltantes que estoy manejando. Me preocupan en las variables:
+- size: no sé cantidad de individuos que componían el grupo > reemplazo por 1, hay 23
+- effort: hay 2
+- distance: hay 26...
+
+Los registros que no tienen distancia deben ser eliminados...
+
+```{r}
+
+
+limpia_sinNA <- limpia %>% 
+  filter(!is.na(distance)) %>% 
+  mutate(size = replace(size,is.na(size),1))
+  
+limpia_sinNA %>% count(Especie)
+
+```
+Quedan 4710 registros de grupos: 4153 de guanacos y 557 de choiques.
+
+Ahora organizo cómo voy a fabricar los conjuntos de datos
+Por especie
+Por muestreo
+Por estrato
+
+Voy a analizar cada uno con funciones de distancia, evaluar ajuste y demás, y obtener una estimación de abundancia y densidad por especie y estrato para cada tiempo. Eso lo quiero compilar en una tabla de estructura:
+Especie - Muestreo - Estrato - Estacion - Abundancia - IC95%inf - IC95%sup
+
+Primero filtro por especie. Fabrico dos conjuntos de datos que voy a usar por separado: guanaco y choique
+
+```{r}
+guanaco  <- limpia_sinNA %>% 
+  filter(Especie == "G")
+
+choique <- limpia_sinNA %>% 
+  filter(Especie == "CH")
+```
+
+
+Ahora... Es necesario que exista el registro de esfuerzo completo también en las transectas que tuvieron 0 individuos registrados. Tengo que identificar cuáles son las Muestreo-Transecta que no aparecen en este listado, y explicitarlas con valor 0. Esto solo a partir del muestreo 20 que corresponde al 2015 cuando se implementan transectas más cortas (en las de años previos son muy extensas, y casi siempre se termina registrando algún animal en todas).
+
+```{r}
+
+trans0 <- limpia_sinNA %>% 
+  filter(Muestreo > 19) %>% 
+  group_by(Muestreo,Especie,Sample.Label) %>% 
+  summarise(
+    n = n()
+  ) %>% 
+  ungroup()
+trans0
+# esto muestra lo que está, no lo que no está... tengo que explicitar esas combinaciones...
+
+```
+Pruebo crosstab. Busco los 0. Tengo que agregar un registro con valor Size = 0 para esas combinaciones de muestreo y sample.label. Solo para muestreos post19 así que filtro esa parte para buscar... Conclusión: uso función que busca un valor y devuelve el listado de la indexación de cada caso que cumple con la condición. Con esos resultados agrego filas al objeto guanaco para cada muestreo-sample.label y con valor Size = 0.
+
+
+```{r funcion}
+which.names <- function(DF, value){
+   ind <- which(DF==value, arr.ind=TRUE)
+   print(paste(rownames(DF)[ind[,"row"]],  colnames(DF)[ind[,"col"]], sep=', '))
+}
+```
+
+Guanaco
+```{r}
+guanaco20 <- guanaco %>% 
+  filter(Muestreo > 19)
+trans0g <- table(guanaco20$Muestreo, guanaco20$Sample.Label)
+
+agregar.g <- which.names(trans0g,0)
+agregar.g <- agregar.g[16:34]
+agregar.g <- as_tibble(agregar.g,) %>% 
+  separate(value, into = c("Muestreo", "Sample.Label"), sep = ", ", convert = T) %>% 
+  mutate(size = 0)
+
+guanaco <- guanaco %>% add_row(agregar.g)
+```
+
+Choique
+```{r}
+choique20 <- choique %>% 
+  filter(Muestreo > 19)
+trans0ch <- table(choique20$Muestreo, choique20$Sample.Label)
+
+agregar.ch <- which.names(trans0ch,0)
+agregar.ch <- agregar.ch[16:164]
+
+agregar.ch <- as_tibble(agregar.ch,) %>% 
+  separate(value, into = c("Muestreo", "Sample.Label"), sep = ", ", convert = T) %>% 
+  mutate(size = 0)
+
+choique <- choique %>% add_row(agregar.ch)
+
+```
+
+# Arrancamos
+
+
+```{r}
+library("Distance")
+```
