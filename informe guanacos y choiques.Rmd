@@ -1,7 +1,7 @@
 ---
-title: "análisis guanacos ML hasta 2020"
+title: "análisis guanacos y choiques ML hasta 2020 - procesamiento"
 author: "LRP"
-date: "25 June 2021"
+date: "Junio 2021"
 output: html_document
 ---
 
@@ -81,8 +81,6 @@ Reviso cuántos y cómo son los datos faltantes que estoy manejando. Me preocupa
 Los registros que no tienen distancia deben ser eliminados...
 
 ```{r}
-
-
 limpia_sinNA <- limpia %>% 
   filter(!is.na(distance)) %>% 
   mutate(size = replace(size,is.na(size),1))
@@ -136,17 +134,62 @@ which.names <- function(DF, value){
 }
 ```
 
+## Tengo que agregar variables que corresponden: est, Year, Area, Region.Label, Effort
+Para eso necesito información de transectas y muestreos de donde copiar y hacer los joins:
+
+```{r}
+guess_encoding("info_transectas.csv")
+transectas <- read_csv("info_transectas.csv", locale = locale(encoding = "windows-1252"),
+                       col_names = T,
+                       col_types = cols(
+                        Transecta = col_factor(NULL),
+                        Estrato = col_factor(levels=c("ALTO","BAJO")),
+                        Numero = col_double(),
+                        LongKm = col_double()
+                   )) %>% 
+  rename(Sample.Label = "Transecta")
+
+guess_encoding("info_muestreos.csv")
+muestreos <- read_csv("info_muestreos.csv", locale = locale(encoding = "ISO-8859-1"),
+                      col_types = cols(
+                        est = col_factor(NULL),
+                        muestreo = col_double(),
+                        año = col_double()
+                      )) %>% 
+  rename(Muestreo = "muestreo")
+
+guess_encoding("info_areas.csv")
+areas <- read_csv("info_areas.csv", locale = locale(encoding = "ASCII"),
+                  col_types = cols(
+                    Region.Label = col_factor(NULL),
+                    Area = col_double()
+                  ))
+```
+
+
+
 Guanaco
 ```{r}
 guanaco20 <- guanaco %>% 
   filter(Muestreo > 19)
 trans0g <- table(guanaco20$Muestreo, guanaco20$Sample.Label)
 
+#lo que sigue: correr junto
 agregar.g <- which.names(trans0g,0)
 agregar.g <- agregar.g[16:34]
 agregar.g <- as_tibble(agregar.g,) %>% 
   separate(value, into = c("Muestreo", "Sample.Label"), sep = ", ", convert = T) %>% 
-  mutate(size = 0)
+  mutate(size = 0) %>% 
+  left_join(muestreos, by = "Muestreo") %>% 
+  left_join(transectas, by = "Sample.Label") %>% 
+  select( -GPSiLat, -GPSiLon, -GPSfLat, -GPSfLon, -Numero, -Transorig) %>% 
+  rename(Region.Label = "Estrato") %>% 
+  left_join(areas, by = "Region.Label") %>% 
+  mutate(Effort = 2*LongKm) %>% 
+  rename(Year = "año") %>% 
+  mutate(Especie = "G") %>% 
+  rename(Length = "LongKm")
+  
 
 guanaco <- guanaco %>% add_row(agregar.g)
 ```
@@ -159,18 +202,30 @@ trans0ch <- table(choique20$Muestreo, choique20$Sample.Label)
 
 agregar.ch <- which.names(trans0ch,0)
 agregar.ch <- agregar.ch[16:164]
-
 agregar.ch <- as_tibble(agregar.ch,) %>% 
   separate(value, into = c("Muestreo", "Sample.Label"), sep = ", ", convert = T) %>% 
-  mutate(size = 0)
+  mutate(size = 0)%>% 
+  left_join(muestreos, by = "Muestreo") %>% 
+  left_join(transectas, by = "Sample.Label") %>% 
+  select( -GPSiLat, -GPSiLon, -GPSfLat, -GPSfLon, -Numero, -Transorig) %>% 
+  rename(Region.Label = "Estrato") %>% 
+  left_join(areas, by = "Region.Label") %>% 
+  mutate(Effort = 2*LongKm) %>% 
+  rename(Year = "año") %>% 
+  mutate(Especie = "G") %>% 
+  rename(Length = "LongKm")
 
 choique <- choique %>% add_row(agregar.ch)
 
 ```
 
-# Arrancamos
-
+Ahora que fabriqué estos dos conjuntos de datos voy a guardarlos para no tener que volver a generarlos a menos que sea necesario. Para eso uso estas funciones:
+# Save multiple objects
+save(data1, data2, file = "data.RData")
+# To load the data again
+load("data.RData")
 
 ```{r}
-library("Distance")
+save(guanaco, choique, file = "GCH.RData")
 ```
+

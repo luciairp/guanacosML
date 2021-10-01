@@ -1,0 +1,96 @@
+---
+title: "Análisis guanacos y choiques ML"
+author: "LRP"
+date: "Septiembre 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Conjunto de datos a utilizar es 'guanaco' y 'choique' generado en "informe guanacos y choiques - procesamiento.Rmd"
+
+Para cargar esos objetos sin modificaciones usar
+load("GCH.RData")
+Si ha habido modificaciones en datos de ingreso hay que volver a generarlos.
+
+```{r}
+library(tidyverse)
+library("Distance")
+```
+```{r hist todos los años}
+ggplot(guanaco, aes(x = distance))+
+  geom_histogram(closed = 'left')+
+  labs(y= "frecuencia", x = "distancia")+
+  ggtitle("guanacos 2009-2020")+
+  theme_light()
+
+ggplot(choique, aes(x = distance))+
+  geom_histogram(closed = 'left')+
+  labs(y= "frecuencia", x = "distancia")+
+  ggtitle("choiques 2009-2020")+
+  theme_light()
+
+```
+
+
+```{r}
+ggplot(guanaco, aes(x = distance))+
+  geom_histogram(closed = 'left')+
+  facet_wrap(~ Muestreo, nrow = 5)+
+  labs(y= "frecuencia", x = "distancia")+
+  ggtitle("guanacos 2009-2020")+
+  theme_light()
+
+ggplot(guanaco, aes(x = distance))+
+  geom_histogram(closed = 'left')+
+  facet_grid(Region.Label ~ est)+
+  labs(y= "frecuencia", x = "distancia")+
+  ggtitle("guanacos 2009-2020")+
+  theme_light()
+
+
+```
+
+
+```{r include=FALSE}
+modelos <- guanaco %>% 
+  filter (Muestreo > 19) %>% 
+  split(.$Muestreo) %>% 
+  map(~ds(data = .x, key="hn", adjustment="cos", truncation = 500, dht.group = F))
+
+```
+
+```{r}
+modelos %>% 
+  map(summary) %>% 
+  map_dbl("r.squared")
+```
+
+
+
+
+```{r}
+esfuerzos <- guanaco %>% 
+  filter (Muestreo > 19) %>% 
+  group_by(Sample.Label, Muestreo) %>% 
+  summarise(
+    conteo = n(),
+  media = mean(Effort, na.rm = TRUE),
+  sd = sd(Effort, na.rm = TRUE)
+  ) %>% 
+  ungroup()
+esfuerzos
+
+area <- guanaco %>% 
+  filter (Muestreo > 19) %>% 
+  group_by(Region.Label) %>% 
+  summarise(
+    media = mean(Area),
+    sd = sd(Area)
+    ) %>% 
+  ungroup()
+area
+```
+
