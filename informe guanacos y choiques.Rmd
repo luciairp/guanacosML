@@ -187,8 +187,9 @@ agregar.g <- as_tibble(agregar.g,) %>%
   left_join(areas, by = "Region.Label") %>% 
   mutate(Effort = 2*LongKm) %>% 
   rename(Year = "año") %>% 
-  mutate(Especie = "G") %>% 
-  rename(Length = "LongKm")
+  rename(Length = "LongKm") %>%
+  mutate(Especie = "G")
+  
   
 
 guanaco <- guanaco %>% add_row(agregar.g)
@@ -211,9 +212,10 @@ agregar.ch <- as_tibble(agregar.ch,) %>%
   rename(Region.Label = "Estrato") %>% 
   left_join(areas, by = "Region.Label") %>% 
   mutate(Effort = 2*LongKm) %>% 
-  rename(Year = "año") %>% 
-  mutate(Especie = "G") %>% 
-  rename(Length = "LongKm")
+  rename(Year = "año") %>%
+  rename(Length = "LongKm") %>% 
+  mutate(Especie = "CH")
+  
 
 choique <- choique %>% add_row(agregar.ch)
 
