@@ -12,6 +12,9 @@ knitr::opts_chunk$set(echo = TRUE)
 
 Trabajo con el conjunto de datos compilado desde 2007, con aclaraciones correspondientes (2007 datos poco confiables, 2008 incompletos, 2015marzo solo primera vuelta) para guanaco y choique. 
 
+Febrero 2022: revisión general de planillas contra las de Martín y las originales.
+Rehago archivos en los que se basa este documento.
+
 El objetivo es fabricar los conjuntos de datos que voy a usar:
 guanaco y choique por separado, para cada tiempo y estrato.
 Para ordenar, filtrar, acomodar, resumir voy a usar funciones de paquetes del tidyverse
@@ -42,7 +45,7 @@ Ahora limpio en pasos:
 
 ```{r}
 limpia <- data %>% 
-  select(-Lat, -Lon, -Machos, -Hembras, -GPSID, -Habitat, -Condiciones, -...26, -ObsID) %>% 
+  select(-Lat, -Lon, -Machos, -Hembras, -GPSID, -Habitat, -Condiciones, -...26,-...27, -ObsID) %>% 
   filter(Year != 2007 & Year != 2008) %>%
   filter(Especie == "G" | Especie == "CH")  %>% 
   mutate(Sample.Label = fct_collapse(Sample.Label,
@@ -70,13 +73,13 @@ limpia <- data %>%
 ```
 
 limpia %>% count(Especie)
-Me quedan 4736 observaciones de registros de guanaco y choique entre 2009 y 2021.
-4172 guanacos y 564 choiques
+Me quedan 5159 observaciones de registros de guanaco y choique entre 2009 y 2021.
+4566 guanacos y 593 choiques
 
 Reviso cuántos y cómo son los datos faltantes que estoy manejando. Me preocupan en las variables:
-- size: no sé cantidad de individuos que componían el grupo > reemplazo por 1, hay 23
-- effort: hay 2
-- distance: hay 26...
+- size: no sé cantidad de individuos que componían el grupo > reemplazo por 1
+- effort
+- distance
 
 Los registros que no tienen distancia deben ser eliminados...
 
@@ -88,7 +91,7 @@ limpia_sinNA <- limpia %>%
 limpia_sinNA %>% count(Especie)
 
 ```
-Quedan 4710 registros de grupos: 4153 de guanacos y 557 de choiques.
+Quedan 5134 registros de grupos: 4548 de guanacos y 586 de choiques.
 
 Ahora organizo cómo voy a fabricar los conjuntos de datos
 Por especie
@@ -158,8 +161,8 @@ muestreos <- read_csv("info_muestreos.csv", locale = locale(encoding = "ISO-8859
                       )) %>% 
   rename(Muestreo = "muestreo")
 
-guess_encoding("info_areas.csv")
-areas <- read_csv("info_areas.csv", locale = locale(encoding = "ASCII"),
+guess_encoding("info_areas_km2.csv")
+areas <- read_csv("info_areas_km2.csv", locale = locale(encoding = "ASCII"),
                   col_types = cols(
                     Region.Label = col_factor(NULL),
                     Area = col_double()
@@ -192,7 +195,9 @@ agregar.g <- as_tibble(agregar.g,) %>%
   
   
 
-guanaco <- guanaco %>% add_row(agregar.g)
+guanaco <- guanaco %>% add_row(agregar.g)%>% 
+  filter(!is.na(Region.Label)) %>% 
+  mutate(distance_km = distance/1000)
 ```
 
 Choique
@@ -217,7 +222,9 @@ agregar.ch <- as_tibble(agregar.ch,) %>%
   mutate(Especie = "CH")
   
 
-choique <- choique %>% add_row(agregar.ch)
+choique <- choique %>% add_row(agregar.ch) %>% 
+  filter(!is.na(Region.Label))%>% 
+  mutate(distance_km = distance/1000)
 
 ```
 
