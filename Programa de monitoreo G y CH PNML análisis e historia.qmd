@@ -1,0 +1,67 @@
+---
+title: "guanacos y choiques PNML"
+format: docx
+editor: visual
+---
+
+## Análisis de datos temporales y flujo de trabajo para monitoreo de guanacos y choiques en el PNML
+
+El monitoreo de guanacos y choiques se realiza desde 2007 en el PN Monte León. A través de los años se han ensayado diferentes versiones del diseño de muestreo, esfuerzos, métodos de registro y análisis de datos. Esto representa un desafío para el análisis pasado y para el sostenimiento del análisis en el tiempo. En este documento se informa sobre los resultados del monitoreo de guanaco y choique desde 2007 a 2021 y se explican los mecanismos para actualizar la base de datos y mantener el análisis en el tiempo.
+
+Los datos revisados y actualizados se incorporan a una hoja única en el archivo de excel guanacosML.xlsx que tiene varias pestañas. Estos datos junto con las pestañas que guardan la información relacional de tamaños de estratos, transectas y muestreos constituyen la base de datos completa. El objeto con los datos se construye por etapas, respetando la interpretación de las transectas y esfuerzos que correspondieron a cada etapa. Se cargan con:
+
+```{r}
+library(tidyverse)
+
+guess_encoding("info_transectas.csv")
+transectas <- read_csv("info_transectas.csv", locale = locale(encoding = "windows-1252"),
+                       col_names = T,
+                       col_types = cols(
+                        Transecta = col_factor(NULL),
+                        Estrato = col_factor(levels=c("ALTO","BAJO")),
+                        Numero = col_double(),
+                        LongKm = col_double()
+                   )) %>% 
+  rename(Sample.Label = "Transecta")
+
+guess_encoding("info_muestreos.csv")
+muestreos <- read_csv("info_muestreos.csv", locale = locale(encoding = "ISO-8859-1"),
+                      col_types = cols(
+                        est = col_factor(NULL),
+                        muestreo = col_double(),
+                        año = col_double()
+                      )) %>% 
+  rename(Muestreo = "muestreo")
+
+guess_encoding("info_areas_km2.csv")
+areas <- read_csv("info_areas_km2.csv", locale = locale(encoding = "ASCII"),
+                  col_types = cols(
+                    Region.Label = col_factor(NULL),
+                    Area = col_double()
+                  ))
+
+
+```
+
+### Etapa 2007-2021
+
+#### Revisión datos.
+
+Trabajo con el conjunto de datos compilado desde 2007 y hasta 2021. Aclaraciones: 2007 datos poco confiables, 2008 incompletos, 2015marzo solo primera vuelta, para guanaco y choique. Se realiza una revisión general de las planillas originales digitalizadas y a veces foto en .pdf contra el conjunto de datos digitalizado. Se corrigen errores de tipeo, numérico y de criterio para completar datos cuando son obvios por contexto.
+
+La información revisada está en la hoja de excel guanacosML.xlsx que tiene varias pestañas.
+
+Los datos hasta primavera de 2021 (muestreo 36) son:
+
+```{r}
+data <- read_csv("guanacosML.csv",
+                 col_types = cols(
+                   est = col_factor(levels=c("ver","oto","inv","pri")),
+                   Fecha = col_date(format = "%d/%m/%Y"),
+                   Region.Label = col_factor(levels=c("ALTO","BAJO")),
+                   Sample.Label = col_factor(),
+                   Especie = col_factor()
+                   ),
+                 n_max = 5401
+                 )
+```

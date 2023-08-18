@@ -66,15 +66,15 @@ fit.hn.uni.haz.list <- function(data, trunc) {
   # unidades: distancia - esfuerzo - area
   conversion.factor <- convert_units("Meter", "Kilometer", "Square kilometer")
   models <- list()
-  models$hn.cos <- ds(data, trun=trunc, key="hn", adj="cos", dht.group = F,
-                      max.adjustments = 3, monotonicity = "strict",
-                      convert.units = conversion.factor)
-  models$uni.cos <- ds(data, trun=trunc, key="unif", adj="cos", dht.group = F,
-                       max.adjustments = 3, monotonicity = "strict",
-                       convert.units = conversion.factor)
-  models$haz.poly <- ds(data, trun=trunc, key="hr", adj="poly", dht.group = F,
-                        max.adjustments = 3, monotonicity = "strict",
-                        convert.units = conversion.factor)
+  models$hn.cos <- ds(data, trun=trunc, key="hn", adj="cos", dht_group = F,
+                      max_adjustments = 3, monotonicity = "strict",
+                      convert_units = conversion.factor)
+  models$uni.cos <- ds(data, trun=trunc, key="unif", adj="cos", dht_group = F,
+                       max_adjustments = 3, monotonicity = "strict",
+                       convert_units = conversion.factor)
+  models$haz.poly <- ds(data, trun=trunc, key="hr", adj="poly", dht_group = F,
+                        max_adjustments = 3, monotonicity = "strict",
+                        convert_units = conversion.factor)
   
   return(models)
 }
@@ -202,7 +202,7 @@ for (i in seq_along(res)){
 #des-listo para tibble
 dplyr::bind_rows(out)
   
-kable(out, digits=3)
+knitr::kable(out, digits=3)
 
 
 ```
@@ -503,12 +503,13 @@ write.csv(resultados,"resultados.csv")
 ```{r}
 densidad <- ggplot(resultados,aes(x=muestreo))+
   geom_point(aes(y = D_est))+
+  geom_line(aes(y = D_est))+
   geom_line(aes(y= Lcl))+
   geom_line(aes(y= Ucl))+
   #geom_smooth(aes(y = D_est))+
   theme_light()
 
-ggplot(res, aes(x = Muestreo))+
+ggplot(res, aes(x = muestreo))+
   geom_point(aes(y = D_estA),col = "red")+
   geom_line(aes(y= lCLA),col = "red")+
   geom_line(aes(y= uCLA),col = "red")+

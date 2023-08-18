@@ -14,6 +14,7 @@ Trabajo con el conjunto de datos compilado desde 2007, con aclaraciones correspo
 
 Febrero 2022: revisión general de planillas contra las de Martín y las originales.
 Rehago archivos en los que se basa este documento.
+Acá contemplo los muestreos hasta el 36: primavera de 2021. A partir de los archivos finales de este documento se van agregando muestreo a muestreo los nuevos datos.
 
 El objetivo es fabricar los conjuntos de datos que voy a usar:
 guanaco y choique por separado, para cada tiempo y estrato.
@@ -22,7 +23,7 @@ Para ordenar, filtrar, acomodar, resumir voy a usar funciones de paquetes del ti
 ```{r}
 library(tidyverse)
 ```
-
+Leo el documento hasta el muestreo 36 de la primavera de 2021 (fila 5401). 
 ```{r}
 data <- read_csv("guanacosML.csv",
                  col_types = cols(
@@ -31,7 +32,8 @@ data <- read_csv("guanacosML.csv",
                    Region.Label = col_factor(levels=c("ALTO","BAJO")),
                    Sample.Label = col_factor(),
                    Especie = col_factor()
-                   )
+                   ),
+                 n_max = 5401
                  )
 ```
 
@@ -112,8 +114,9 @@ choique <- limpia_sinNA %>%
 ```
 
 
-Ahora... Es necesario que exista el registro de esfuerzo completo también en las transectas que tuvieron 0 individuos registrados. Tengo que identificar cuáles son las Muestreo-Transecta que no aparecen en este listado, y explicitarlas con valor 0. Esto solo a partir del muestreo 20 que corresponde al 2015 cuando se implementan transectas más cortas (en las de años previos son muy extensas, y casi siempre se termina registrando algún animal en todas).
+Problema: Es necesario que exista el registro de esfuerzo completo también en las transectas que tuvieron 0 individuos registrados. Tengo que identificar cuáles son las combinaciones de Muestreo-Transecta que no aparecen en este listado, y explicitarlas con valor 0 en size. Esto solo a partir del muestreo 20 que corresponde al 2015 cuando se implementan transectas más cortas (en las de años previos son muy extensas, y casi siempre se termina registrando algún animal en todas).
 
+Si quiero ver lo que está ejecuto este código. 
 ```{r}
 
 trans0 <- limpia_sinNA %>% 
@@ -124,10 +127,11 @@ trans0 <- limpia_sinNA %>%
   ) %>% 
   ungroup()
 trans0
-# esto muestra lo que está, no lo que no está... tengo que explicitar esas combinaciones...
+
 
 ```
-Pruebo crosstab. Busco los 0. Tengo que agregar un registro con valor Size = 0 para esas combinaciones de muestreo y sample.label. Solo para muestreos post19 así que filtro esa parte para buscar... Conclusión: uso función que busca un valor y devuelve el listado de la indexación de cada caso que cumple con la condición. Con esos resultados agrego filas al objeto guanaco para cada muestreo-sample.label y con valor Size = 0.
+Para lo que sigue lo que necesito es explicitar esas combinaciones y agregar esos registros.
+Pruebo crosstab. Busco los 0. Tengo que agregar un registro con valor Size = 0 para esas combinaciones de muestreo y sample.label. Solo para muestreos post19 así que filtro esa parte para buscar. Conclusión: uso función que busca un valor y devuelve el listado de la indexación de cada caso que cumple con la condición. Con esos resultados agrego filas al objeto guanaco para cada muestreo-sample.label y con valor Size = 0.
 
 
 ```{r funcion}
@@ -138,7 +142,7 @@ which.names <- function(DF, value){
 ```
 
 ## Tengo que agregar variables que corresponden: est, Year, Area, Region.Label, Effort
-Para eso necesito información de transectas y muestreos de donde copiar y hacer los joins:
+Para eso necesito información de transectas y muestreos de donde copiar y hacer los joins. Construyo la base de datos: cargo las tablas que se van a relacionar con la tabla de datos. 
 
 ```{r}
 guess_encoding("info_transectas.csv")
