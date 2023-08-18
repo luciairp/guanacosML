@@ -8,7 +8,17 @@ editor: visual
 
 El monitoreo de guanacos y choiques se realiza desde 2007 en el PN Monte León. A través de los años se han ensayado diferentes versiones del diseño de muestreo, esfuerzos, métodos de registro y análisis de datos. Esto representa un desafío para el análisis pasado y para el sostenimiento del análisis en el tiempo. En este documento se informa sobre los resultados del monitoreo de guanaco y choique desde 2007 a 2021 y se explican los mecanismos para actualizar la base de datos y mantener el análisis en el tiempo.
 
-Los datos revisados y actualizados se incorporan a una hoja única en el archivo de excel guanacosML.xlsx que tiene varias pestañas. Estos datos junto con las pestañas que guardan la información relacional de tamaños de estratos, transectas y muestreos constituyen la base de datos completa. El objeto con los datos se construye por etapas, respetando la interpretación de las transectas y esfuerzos que correspondieron a cada etapa. Se cargan con:
+Los datos revisados y actualizados se incorporan a una hoja única en el archivo de excel **guanacosML.xlsx** que tiene varias pestañas y va llevando el registro histórico de lo que se ha hecho. Estos datos junto con las pestañas que guardan la información relacional de tamaños de estratos, transectas y muestreos constituyen la base de datos completa. Para analizar y responder preguntas particulares se construyen diferentes subconjuntos de datos que se definen como nuevos objetos a partir de la base general. Estos objetos son diferentes de acuerdo con lo que requiere cada análisis. Cada objeto fabricado se guarda también como un archivo de datos en formato .csv.
+
+Para cargar la base de datos generamos los objetos:
+
+-   transectas: lista de transectas con su nombre actual y anterior, puntos gps de inicio y fin, longitud en km y a qué estrato pertenecen
+
+-   areas: lista de estratos posibles y el área en km2
+
+-   muestreos: lista de muestreos con número único identificador secuencial, en qué estación del año se inició, y el año
+
+-   data: los datos del monitoreo completos. A partir de este objeto y de acuerdo a lo necesario es que se generan otros objetos. Los argumentos skip y nmax limitan la cantidad de filas a leer.
 
 ```{r}
 library(tidyverse)
@@ -40,16 +50,26 @@ areas <- read_csv("info_areas_km2.csv", locale = locale(encoding = "ASCII"),
                     Area = col_double()
                   ))
 
+data <- read_csv("guanacosML.csv",
+                 col_types = cols(
+                   est = col_factor(levels=c("ver","oto","inv","pri")),
+                   Fecha = col_date(format = "%d/%m/%Y"),
+                   Region.Label = col_factor(levels=c("ALTO","BAJO")),
+                   Sample.Label = col_factor(),
+                   Especie = col_factor()
+                   )
+                 )
+
 
 ```
 
-### Etapa 2007-2021
+## Estimación abundancia y densidad en base al método de distancia: línea-transecta.
+
+### Etapa 2007-2021. 
 
 #### Revisión datos.
 
 Trabajo con el conjunto de datos compilado desde 2007 y hasta 2021. Aclaraciones: 2007 datos poco confiables, 2008 incompletos, 2015marzo solo primera vuelta, para guanaco y choique. Se realiza una revisión general de las planillas originales digitalizadas y a veces foto en .pdf contra el conjunto de datos digitalizado. Se corrigen errores de tipeo, numérico y de criterio para completar datos cuando son obvios por contexto.
-
-La información revisada está en la hoja de excel guanacosML.xlsx que tiene varias pestañas.
 
 Los datos hasta primavera de 2021 (muestreo 36) son:
 
@@ -65,3 +85,125 @@ data <- read_csv("guanacosML.csv",
                  n_max = 5401
                  )
 ```
+
+A partir de acá los datos se limpian y filtran según criterios:
+
+1\. elimino las variables que no voy a usar en este análisis (Lat Lon Machos Hembras GPSID Habitat Condiciones X26 ObsID)
+
+2\. filtro años con dificultades en registros: excluyo 2007 y 2008
+
+3\. filtro observaciones de especies que no son guanaco ni choique
+
+4\. renombro transectas para que coincidan las 21
+
+5\. calculo distancia perpendicular, en m y en km, y elimino distancia radial y ángulo
+
+En un segundo paso resuelvo problemas con registros faltantes. Si existen registros de guanaco o choique con distancia pero sin tamaño de grupo, lo asumo en valor 1. Si existen registros sin valor de distancia, lo elimino.
+
+```{r}
+limpia <- data %>% 
+  select(-Lat, -Lon, -Machos, -Hembras, -GPSID, -Habitat, -Condiciones, -...26,-...27, -ObsID) %>% 
+  filter(Year != 2007 & Year != 2008) %>%
+  filter(Especie == "G" | Especie == "CH")  %>% 
+  mutate(Sample.Label = fct_collapse(Sample.Label,
+    ANT1 = c("Antena 1", "ANTENA 1"),
+    ANT2 = c("Antena 2", "ANTENA 2"),
+    LAG1 = c("Laguna 1", "LAGUNA 1"),
+    LAG2 = c("Laguna 2", "LAGUNA 2"),
+    LAG3 = c("Laguna 3", "LAGUNA 3"),
+    RP63A1 = c("RP63 A1", "Rp63 A1"),
+    RP63B1 = c("RP63 B1", "Rp63 B1"),
+    RP63B2 = c("RP63 B2", "Rp63 B2"),
+    RP63B3 = c("RP63 B3"),
+    RP63B4 = c("RP63 B4", "Rp63 B4"),
+    RP63B5 = c("RP63 B5"),
+    TRI1 = c("TRIANGULO 1", "Triangulo 1"),
+    TRI2 = c("TRIANGULO 2", "Triangulo 2"),
+    LIMS1 = c("limite sur 1","LIMITE SUR 1","Limite Sur 1"),
+    LIMS2 = c("LIMITE SUR 2","Limite Sur 2")
+    )
+  ) %>% 
+  mutate(distance = abs(sin(Angle)*RadialDistance)) %>% 
+  select(-Angle, -RadialDistance)%>% 
+  mutate(distance_km = distance/1000)
+
+limpia_sinNA <- limpia %>% 
+  filter(!is.na(distance)) %>% 
+  mutate(size = replace(size,is.na(size),1))
+  
+```
+
+A partir de ese conjunto de datos es necesario revisar que aparezcan todas las transectas que tuvieron 0 registros, para que el esfuerzo se contabilice. Para eso, defino por separado los conjuntos de datos de guanaco y choique, explicito las combinaciones de transectas por muestreos y agrego filas de registros con el esfuerzo que corresponde a cada transecta, y con valor 0 en la variable de tamaño de grupo "size". Como resultado obtengo subconjuntos de datos para guanaco y para choique que tienen la información hasta el 2021 (muestreo 36).
+
+```{r}
+guanaco36  <- limpia_sinNA %>% 
+  filter(Especie == "G")
+
+choique36 <- limpia_sinNA %>% 
+  filter(Especie == "CH")
+
+which.names <- function(DF, value){
+   ind <- which(DF==value, arr.ind=TRUE)
+   print(paste(rownames(DF)[ind[,"row"]],  colnames(DF)[ind[,"col"]], sep=', '))
+}
+
+guanaco20 <- guanaco36 %>% 
+  filter(Muestreo > 19)
+trans0g <- table(guanaco20$Muestreo, guanaco20$Sample.Label)
+
+agregar.g <- which.names(trans0g,0)
+agregar.g <- agregar.g[16:34]
+agregar.g <- as_tibble(agregar.g,) %>% 
+  separate(value, into = c("Muestreo", "Sample.Label"), sep = ", ", convert = T) %>% 
+  mutate(size = 0) %>% 
+  left_join(muestreos, by = "Muestreo") %>% 
+  left_join(transectas, by = "Sample.Label") %>% 
+  select( -GPSiLat, -GPSiLon, -GPSfLat, -GPSfLon, -Numero, -Transorig) %>% 
+  rename(Region.Label = "Estrato") %>% 
+  left_join(areas, by = "Region.Label") %>% 
+  mutate(Effort = 2*LongKm) %>% 
+  rename(Year = "año") %>% 
+  rename(Length = "LongKm") %>%
+  mutate(Especie = "G")
+
+guanaco36 <- guanaco36 %>% add_row(agregar.g)%>% 
+  filter(!is.na(Region.Label))
+
+choique20 <- choique36 %>% 
+  filter(Muestreo > 19)
+trans0ch <- table(choique20$Muestreo, choique20$Sample.Label)
+
+agregar.ch <- which.names(trans0ch,0)
+agregar.ch <- agregar.ch[16:164]
+agregar.ch <- as_tibble(agregar.ch,) %>% 
+  separate(value, into = c("Muestreo", "Sample.Label"), sep = ", ", convert = T) %>% 
+  mutate(size = 0)%>% 
+  left_join(muestreos, by = "Muestreo") %>% 
+  left_join(transectas, by = "Sample.Label") %>% 
+  select( -GPSiLat, -GPSiLon, -GPSfLat, -GPSfLon, -Numero, -Transorig) %>% 
+  rename(Region.Label = "Estrato") %>% 
+  left_join(areas, by = "Region.Label") %>% 
+  mutate(Effort = 2*LongKm) %>% 
+  rename(Year = "año") %>%
+  rename(Length = "LongKm") %>% 
+  mutate(Especie = "CH")
+
+choique36 <- choique36 %>% add_row(agregar.ch) %>% 
+  filter(!is.na(Region.Label))
+```
+
+::: {.callout-note appearance="simple"}
+Estos conjuntos de datos que están curados para el análisis con las funciones de distance, los guardo como objetos R y como archivos csv. que se puedan revisar. Como son los datos hasta 2021 queda ese número en el nombre del objeto.
+:::
+
+```{r}
+save(guanaco36, choique36, file = "GCH36.RData")
+write_csv(guanaco36,"guanaco36.csv")
+write_csv(choique36, "choique36.csv")
+```
+
+#### Análisis de distancia de etapa 1
+
+#### Etapa actual: año a año 2022 en adelante.
+
+Cómo integrar datos nuevos al archivo, levantarlos, hacer análisis e integrar a tabla histórica de densidad, etc.
