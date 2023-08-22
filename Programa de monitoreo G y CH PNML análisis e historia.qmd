@@ -20,7 +20,7 @@ Para cargar la base de datos generamos los objetos:
 
 -   data: los datos del monitoreo completos. A partir de este objeto y de acuerdo a lo necesario es que se generan otros objetos. Los argumentos skip y nmax limitan la cantidad de filas a leer.
 
-```{r}
+```{r , include = FALSE}
 library(tidyverse)
 
 guess_encoding("info_transectas.csv")
@@ -193,7 +193,7 @@ choique36 <- choique36 %>% add_row(agregar.ch) %>%
 ```
 
 ::: {.callout-note appearance="simple"}
-Estos conjuntos de datos que están curados para el análisis con las funciones de distance, los guardo como objetos R y como archivos csv. que se puedan revisar. Como son los datos hasta 2021 queda ese número en el nombre del objeto.
+Estos conjuntos de datos que están curados para el análisis con las funciones de distance, los guardo como objetos R y como archivos csv. que se puedan revisar. Como son los datos hasta 2021 queda ese número en el nombre del objeto: guanaco36 y choique36.
 :::
 
 ```{r}
@@ -204,6 +204,470 @@ write_csv(choique36, "choique36.csv")
 
 #### Análisis de distancia de etapa 1
 
-#### Etapa actual: año a año 2022 en adelante.
+(basado en "informe guanacos y choiques B ... . Rmd")
+
+Conjunto de datos a utilizar es 'guanaco36' y 'choique36'. Para cargar esos objetos sin modificaciones usar load("GCH36.RData")
+
+```{r , include = FALSE}
+load("GCH36.RData")
+library(Distance)
+```
+
+Defino funciones para hacer ajustes, selección de modelo y cargar resultados en tabla única.
+
+Función "fit.hn.uni.haz.list". Purpose: fit 3 key functions to transect data and print model selection table. Input: data to analyse, truncation distance, print flag. Output: model object (class \`dsmodel\`). unidades: distancia - esfuerzo - area.
+
+```{r, include = FALSE}
+fit.hn.uni.haz.list <- function(data, trunc) {
+  conversion.factor <- convert_units("Meter", "Kilometer", "Square kilometer")
+  models <- list()
+  models$hn.cos <- ds(data, trun=trunc, key="hn", adj="cos", dht_group = F,
+                      max_adjustments = 3, monotonicity = "strict",
+                      convert_units = conversion.factor)
+  models$uni.cos <- ds(data, trun=trunc, key="unif", adj="cos", dht_group = F,
+                       max_adjustments = 3, monotonicity = "strict",
+                       convert_units = conversion.factor)
+  models$haz.poly <- ds(data, trun=trunc, key="hr", adj="poly", dht_group = F,
+                        max_adjustments = 3, monotonicity = "strict",
+                        convert_units = conversion.factor)
+  
+  return(models)
+}
+```
+
+Fabrico lista para datos de muestreos separados según estrato alta y baja:
+
+```{r, include = FALSE}
+gua_lista <- list()
+gua <- guanaco36[guanaco36$Muestreo > 19,]
+gua_lista$A <- gua[gua$Region.Label=="ALTO",]
+gua_lista$B <- gua[gua$Region.Label=="BAJO",]
+```
+
+La selección de la función de detección, si bien puede considerarse basada en la restricción a modelos válidos por prueba de Cramer von Mises y plausibles por valor mínimo de AIC, es conveniente hacerla en base a la exploración adicional de los histogramas de detección con las funciones de detección superpuestas. Por eso los pasos a seguir son:
+
+\- 1) hacer el ajuste de los 3 modelos a cada estrato y muestreo (total 2x17x3, gua_lista\$A y gua_lista\$B)
+
+```{r, include = FALSE}
+# 1) estratos separados
+# fabrico objeto donde se va a guardar como lista
+mod_out <- vector("list", length(gua_lista))
+
+# hago ciclo
+for (i in seq_along(gua_lista)){
+  
+  mod_out[[i]] <- gua_lista[[i]] %>%
+    split(.$Muestreo) %>%
+    map(~fit.hn.uni.haz.list(data = .x, trunc = "10%"))
+  
+}
+```
+
+\- 2) hacer el ajuste de los 3 modelos a los estratos conjuntos y muestreo (total 17x3, objeto gua)
+
+```{r, include = FALSE}
+# 2) con estratos pero estimación conjunta
+# fabrico objeto donde se va a guardar como lista
+# número de muestreos = 17
+mod_out_strata <- vector("list", length(17))
+# hago ciclo
+for (i in seq_along(17)){
+    mod_out_strata <- gua %>%
+    split(.$Muestreo) %>%
+    map(~fit.hn.uni.haz.list(data = .x, trunc = "10%"))
+  }
+```
+
+\- 3) obtener la tabla que resume valores relevantes de selección de modelo en cada caso. Necesito funciones que extraigan las salidas de los modelos. Las funciones se llaman extract_model_data_table para los modelos sin estrato, y extract_model_data_table_strata para los modelos analizados por separados los estratos.
+
+```{r funciones extract_model_data table, include = FALSE}
+
+extract_model_data_table <- function(model){
+  # extrae elementos elegidos del ajuste del modelo y arma una tabla
+  out <- as_tibble(matrix(0, nrow = 1, ncol = 5))
+  colnames(out) <-c("key","AIC","CvonM_p","P_enc_medio","SE_P_enc_medio")
+  out[[1]] <- summary(model)$ds$key
+  out[[2]] <- model$ddf$criterion
+  out[[3]] <- ddf.gof(model$ddf, qq=FALSE)$dsgof$CvM$p
+  out[[4]] <- summary(model)$ds$average.p
+  out[[5]] <- summary(model)$ds$average.p.se
+  return(out)
+}
+
+extract_model_data_table_strata <- function(model){
+  # extrae elementos elegidos del ajuste del modelo y arma una tabla
+  out <- as_tibble(matrix(0, nrow = 3, ncol = 6))
+  colnames(out) <-c("key","Region","AIC","CvonM_p","P_enc_medio","SE_P_enc_medio")
+  out[[1]] <- summary(model)$ds$key
+  out[[2]] <- model$dht$individuals$summary$Region
+  out[[3]] <- model$ddf$criterion
+  out[[4]] <- ddf.gof(model$ddf, qq=FALSE)$dsgof$CvM$p
+  out[[5]] <- summary(model)$ds$average.p
+  out[[6]] <- summary(model)$ds$average.p.se
+  return(out)
+}
+```
+
+```{r, include = FALSE}
+
+# PARA ESTRATOS JUNTOS, una misma función de detección para A y B, basada en mod_out_strata
+# fabrico objeto donde se va a guardar como lista
+moddata_strata <- vector("list", 17)
+
+# hago ciclo
+  for (i in seq_along(mod_out_strata)){
+    
+    moddata_strata[[i]] <- map(mod_out_strata[[i]], extract_model_data_table_strata) %>% 
+      bind_rows(.id = "id")
+  }
+
+moddata_strata_f <- bind_rows(moddata_strata, .id = "id") %>% 
+  mutate(muestreo = rep(20:36,each = 9)) %>%
+  select(muestreo, Region,everything(),-id)
+
+
+# PARA ESTRATOS POR SEPARADO, primero A y después B
+
+# fabrico objeto donde se va a guardar como lista
+moddata_full <- vector("list", length(mod_out))
+
+for (i in seq_along(mod_out)){
+  # para cada estrato
+
+  for (j in seq_along(mod_out[[i]])){
+    # para cada muestreo
+    
+    moddata_full[[i]][[j]] <- map(mod_out[[i]][[j]], extract_model_data_table) %>% 
+      bind_rows(.id = "id")
+  }
+}
+
+# para completar datos de estrato uso mutate y 3*número de muestreos
+moddata_full_f <- bind_rows(moddata_full, .id = "id") %>% 
+  mutate(estrato = rep(c("ALTO","BAJO"), each = 51)) %>% 
+  mutate(muestreo = rep(rep(20:36,each = 3),2)) %>% 
+  select(estrato, muestreo, everything())
+
+```
+
+Los objetos que contienen las tablas con los resultados de los modelos para cada muestreo total, y por estrato alto y bajo son moddata_strata_f y moddata_full_f.
+
+Tengo que ver en qué casos puedo hacer la evaluación por estrato por separado, y en cuáles tengo que mirar solo el dato conjunto. Para eso reviso cuáles de los muestreos tienen un mínimo de 30 registros:
+
+```{r}
+registros <- gua %>% 
+  filter(size > 0) %>% 
+  group_by(Muestreo, Region.Label) %>% 
+  summarise(
+    n = n()
+  )
+registros %>% filter(n < 30)
+```
+
+Muestreo Region.Label n
+
+\<dbl\> \<fct\> \<int\>
+
+1 22 BAJO 11
+
+2 23 BAJO 28
+
+3 27 BAJO 27
+
+4 28 BAJO 25
+
+5 30 BAJO 22
+
+6 35 BAJO 29
+
+Estos 6 muestreos deberían tener estimaciones conjuntas
+
+\- 4) hacer los plots de los modelos en cada caso
+
+Reviso uno a uno los plots con los datos observados y el modelo ajustado superpuesto. Miro cuál es el modelo que se acomoda mejor, teniendo en cuenta también AIC y prueba de Crámer vos Mises.
+
+```{r include=FALSE}
+cutpoints <- c(0,10,20,30,40,50,65,80,100,125,150,175,200,225,250,275,300,325,350,375,400,425,450,475,500,525,550,575,600)
+
+# todos los plots
+for (i in seq_along(mod_out)){
+  for (j in seq_along(mod_out[[i]])){
+    for (k in seq_along(mod_out[[i]][[j]])){
+    
+    plot(mod_out[[i]][[j]][[k]],
+         main = paste(mod_out[[i]][[j]][[k]][[1]]$name.message),
+         breaks = cutpoints)
+    }
+  }
+}
+
+# por partes: reemplazar números: 
+# 1 y 2 para estrato alto y bajo respect.
+est <- 2
+# 1 a 17 para cada muestreo (orden corresp a 20 a 36)
+mue <- 17
+
+    for (i in seq_along(mod_out[[est]][[mue]])){
+    
+    plot(mod_out[[est]][[mue]][[i]],
+         main = paste(mod_out[[est]][[mue]][[i]][[1]]$name.message),
+         breaks = cutpoints)
+    }
+
+# para estimación conjunta: reemplazar número del muestreo (1 para 20 y sigue así)
+# miro para 22, 23, 27, 28, 30 y 35 que es:
+# 3, 4, 8, 9, 11, 16
+a <- 16
+for (i in seq_along(mod_out_strata[[a]])){
+        plot(mod_out_strata[[a]][[i]],
+         main = paste(mod_out_strata[[a]][[i]][[1]]$name.message),
+         breaks = cutpoints)
+    }
+```
+
+\- 5) seleccionar el modelo de cada muestreo y estrato y cargarlo en una lista. Armo lista "modelos" para las estimaciones por separado, y modelos_strata para los de estimación conjunta.
+
+```{r, include=FALSE}
+# para muestreos con estimación por separado: lista modelos
+modelos <- list()
+
+modelos$A_20 <- mod_out[[1]]$`20`$hn.cos #halfnormal #ok
+modelos$A_21 <- mod_out[[1]]$`21`$uni.cos #unif con coseno #ok
+#modelos$A_22 <- mod_out[[1]]$`22`$uni.cos #unif con coseno #ok
+#modelos$A_23 <- mod_out[[1]]$`23`$uni.cos #unif con coseno
+modelos$A_24 <- mod_out[[1]]$`24`$uni.cos #unif con 2 coseno #ok
+modelos$A_25 <- mod_out[[1]]$`25`$uni.cos #unif con 2 coseno #ok
+modelos$A_26 <- mod_out[[1]]$`26`$hn.cos #halfnormal #ok
+#modelos$A_27 <- mod_out[[1]]$`27`$haz.poly #hazardrate
+#modelos$A_28 <- mod_out[[1]]$`28`$hn.cos #halfnormal
+modelos$A_29 <- mod_out[[1]]$`29`$hn.cos #halfnormal #ok
+#modelos$A_30 <- mod_out[[1]]$`30`$haz.poly #hazardrate
+modelos$A_31 <- mod_out[[1]]$`31`$haz.poly #hazardrate #ok
+modelos$A_32 <- mod_out[[1]]$`32`$uni.cos #unif con 2 coseno #ok
+modelos$A_33 <- mod_out[[1]]$`33`$hn.cos #halfnormal con 2 coseno #ok
+modelos$A_34 <- mod_out[[1]]$`34`$haz.poly #hazard rate #ok
+#modelos$A_35 <- mod_out[[1]]$`35`$uni.cos #unif con 1 coseno #ok
+modelos$A_36 <- mod_out[[1]]$`36`$hn.cos #halfnormal
+
+modelos$B_20 <- mod_out[[2]]$`20`$haz.poly #hazardrate #ok
+modelos$B_21 <- mod_out[[2]]$`21`$uni.cos #unif con 1 coseno #ok
+#modelos$B_22 <- mod_out[[2]]$`22`$uni.cos #unif con coseno
+#modelos$B_23 <- mod_out[[2]]$`23`$uni.cos #unif con 2 coseno
+modelos$B_24 <- mod_out[[2]]$`24`$hn.cos #halfnormal #ok
+modelos$B_25 <- mod_out[[2]]$`25`$haz.poly #hazardrate #ok
+modelos$B_26 <- mod_out[[2]]$`26`$uni.cos #unif con 1 coseno #ok
+#modelos$B_27 <- mod_out[[2]]$`27`$uni.cos #unif con coseno
+#modelos$B_28 <- mod_out[[2]]$`28`$uni.cos #unif con coseno
+modelos$B_29 <- mod_out[[2]]$`29`$uni.cos #unif con coseno #ok
+#modelos$B_30 <- mod_out[[2]]$`30`$haz.poly #hazardrate
+modelos$B_31 <- mod_out[[2]]$`31`$haz.poly #hazardrate #ok
+modelos$B_32 <- mod_out[[2]]$`32`$uni.cos #unif con 1 coseno
+modelos$B_33 <- mod_out[[2]]$`33`$hn.cos #halfnormal #ok
+modelos$B_34 <- mod_out[[2]]$`34`$uni.cos #unif con coseno
+#modelos$B_35 <- mod_out[[2]]$`35`$
+modelos$B_36 <- mod_out[[2]]$`36`$hn.cos #halfnormal #ok
+
+# para muestreos con estimación conjunta: lista modelos_strata
+modelos_strata <- list()
+modelos_strata$todo_22 <- mod_out_strata$`22`$uni.cos #unif con 1 coseno #ok
+modelos_strata$todo_23 <- mod_out_strata$`23`$uni.cos #unif con 1 coseno #ok
+modelos_strata$todo_27 <- mod_out_strata$`27`$uni.cos #unif con 1 coseno #ok
+modelos_strata$todo_28 <- mod_out_strata$`28`$haz.poly #hazardrate #ok
+modelos_strata$todo_30 <- mod_out_strata$`30`$hn.cos #halfnormal #ok
+modelos_strata$todo_35 <- mod_out_strata$`35`$hn.cos #halfnormal #ok
+
+```
+
+\- 6) sobre esa lista: extraer los valores resultado de las estimaciones de densidad. Para eso defino funciones que permitan extraer valores de las salidas a una tabla, y calcular valores derivados.
+
+```{r funciones para extraer datos de modelos a tabla}
+extract_model_res_table <- function(model){
+  # extrae elementos elegidos del resultado de un modelo y arma una tabla
+  out <- as_tibble(matrix(0, nrow = 1, ncol = 11))
+  colnames(out) <-c('Modelo','Región','D_est','SE','Lcl','Ucl','Group_Size_est','SE_grupo','N_est','LclN','UclN')
+  out[[1]] <- model$call$key
+  out[[2]] <- model$dht$clusters$summary$Region
+  out[[3]] <- model$dht$individuals$D$Estimate
+  out[[4]] <- model$dht$individuals$D$se
+  out[[5]] <- model$dht$individuals$D$lcl
+  out[[6]] <- model$dht$individuals$D$ucl
+  out[[7]] <- model$dht$Expected.S$Expected.S[[1]]
+  out[[8]] <- model$dht$Expected.S$se.Expected.S[[2]]
+  out[[9]] <- model$dht$individuals$N$Estimate
+  out[[10]] <- model$dht$individuals$N$lcl
+  out[[11]] <- model$dht$individuals$N$ucl
+  return(out)  
+}
+
+extract_model_res_table_strata <- function(model){
+  # extrae elementos elegidos del resultado de un modelo y arma una tabla
+  out <- as_tibble(matrix(0, nrow = 3, ncol = 11))
+  colnames(out) <-c('Modelo','Región','D_est','SE','Lcl','Ucl','Group_Size_est','SE_grupo','N_est','LclN','UclN')
+  out[[1]] <- model$call$key
+  out[[2]] <- model$dht$clusters$summary$Region
+  out[[3]] <- model$dht$individuals$D$Estimate
+  out[[4]] <- model$dht$individuals$D$se
+  out[[5]] <- model$dht$individuals$D$lcl
+  out[[6]] <- model$dht$individuals$D$ucl
+  out[[7]] <- model$dht$Expected.S$Expected.S[[1]]
+  out[[8]] <- model$dht$Expected.S$se.Expected.S[[2]]
+  out[[9]] <- model$dht$individuals$N$Estimate
+  out[[10]] <- model$dht$individuals$N$lcl
+  out[[11]] <- model$dht$individuals$N$ucl
+  return(out)  
+}
+```
+
+Uso las funciones para construir tablas. Reformulo unidades.
+
+```{r}
+# tabla para modelos con estratos separados
+tabla_res <- map(modelos, extract_model_res_table) %>% 
+  dplyr::bind_rows() %>% 
+  mutate(muestreo = rep(c(20,21,24,25,26,29,31,32,33,34,36),times=2)) %>% 
+  arrange(muestreo)
+
+# tabla para modelos con estratos juntos
+tabla_res_strata <- map(modelos_strata, extract_model_res_table_strata)  %>% 
+  dplyr::bind_rows() %>% 
+  mutate(muestreo = rep (c(22,23,27,28,30,35),each = 3)) %>% 
+  select(muestreo, Región, everything())
+
+res <- tabla_res %>% 
+  split(.$Región) 
+res <- res %>%  bind_cols(res$ALTO,res$BAJO) %>% 
+  select(1:24)
+colnames(res) <- (c(
+    "ModeloA", "RegiónA", "D_estA", "SEA", "lCLA","uCLA","GroupA", "SEGroupA",
+    "N_A", "LclN_A","UclN_A", "muestreoA",
+    "ModeloB", "RegiónB", "D_estB", "SEB", "lCLB","uCLB","GroupB", "SEGroupB",
+    "N_B", "LclN_B","UclN_B", "muestreoB"
+  ))
+
+
+
+```
+
+La estimación de densidad se calcula para la unidad de área del argumento "conversion.factor", es decir, para kilómetros cuadrados. Si la mantengo en esa unidad lo que hago es: (dens Alto \* 277 + dens Bajo \* 338)/615. Si quisiera expresarlo por hectárea: alto abarca 277000000 m2 / 10000 = 27700 ha; bajo 338000000 m2 / 10000 = 33800 ha. (dens Alto x 27700 + dens Bajo x 33800)/61500
+
+```{r}
+  res <- res %>%
+  mutate(D_gral_Km2 = (D_estA*277+D_estB*338)/615) %>% 
+  mutate(SE_gral = (SEA*277+SEB*338)/615) %>% 
+  mutate(lCL_gral = (lCLA*277+lCLB*338)/615) %>% 
+  mutate(uCL_gral = (uCLA*277+uCLB*338)/615) %>% 
+  mutate(Group_gral = (GroupA*277+GroupB*338)/615) %>% 
+  mutate(SEGroup_gral = (SEGroupA*277+SEGroupB*338)/615) %>% 
+  mutate(Ngral = N_A + N_B) %>% 
+  mutate(lCLNgral = LclN_A + LclN_B) %>% 
+  mutate(uCLNgral = UclN_A + UclN_B) %>%
+  mutate(muestreo = muestreoA) %>% 
+  select(-muestreoB, -muestreoA, -RegiónA, -RegiónB) %>% 
+  select(muestreo,everything())
+
+```
+
+y compilo los resultados de la estimación por separado y la conjunta según corresponda.
+
+```{r}
+res_temp <- res %>% 
+  select(muestreo,22:30)
+
+res_strata_temp <- tabla_res_strata %>% 
+  filter(Región == "Total") %>% 
+  select(-Región, -Modelo)
+
+colnames(res_temp) <- (colnames(res_strata_temp))
+resultados36 <- res_temp %>% 
+  add_row(res_strata_temp) %>% 
+  arrange(muestreo) %>% 
+  mutate(Muestreo = muestreo) %>% 
+  left_join(muestreos, by = "Muestreo") %>% 
+  select(-Muestreo)
+
+```
+
+\- 7) escribo el archivo que tiene estos resultados, con la densidad en km2:
+
+```{r}
+write.csv(resultados36,"resultados36.csv")
+```
+
+#### Gráficos
+
+Hago algunas figuras iniciales con la serie temporal de densidad estimada y los valores de los intervalos de confianza.
+
+```{r}
+densidad <- ggplot(resultados36,aes(x=muestreo))+
+  geom_point(aes(y = D_est))+
+  geom_line(aes(y = D_est))+
+  geom_line(aes(y= Lcl))+
+  geom_line(aes(y= Ucl))+
+  #geom_smooth(aes(y = D_est))+
+  theme_light()
+
+ggplot(res, aes(x = muestreo))+
+  geom_point(aes(y = D_estA),col = "red")+
+  geom_line(aes(y= lCLA),col = "red")+
+  geom_line(aes(y= uCLA),col = "red")+
+  #geom_smooth(aes(y=D_estA))+
+  geom_point(aes(y = D_estB),col = "green")+
+  geom_line(aes(y= lCLB),col = "green")+
+  geom_line(aes(y= uCLB),col = "green")+
+  #geom_smooth(aes(y=D_estB))+
+  theme_light()
+```
+
+Agrego cálculo de índices por unidad de esfuerzo (kilómetro recorrido)
+
+```{r}
+indices_tr <- guanaco36 %>% 
+  group_by(nombreviejo,Sample.Label, Muestreo) %>% 
+  summarise(
+    g_avist_total = sum(size),
+    Effort = first(Effort)
+  ) %>% 
+  ungroup()
+
+indices_mue <- indices_tr %>% 
+  group_by(Muestreo) %>% 
+  summarise(
+  g_avist_total = sum(g_avist_total),
+  effort_total = sum(Effort, na.rm=T),
+  apue = g_avist_total/effort_total
+  ) %>% 
+  ungroup() %>% 
+  left_join(muestreos, by = "Muestreo")
+
+apue <- ggplot(indices_mue, aes(x = Muestreo, y = apue, col = año))+
+  geom_point()+
+  geom_line()+
+  theme_light()
+
+```
+
+### Etapa actual: año a año 2022 en adelante.
 
 Cómo integrar datos nuevos al archivo, levantarlos, hacer análisis e integrar a tabla histórica de densidad, etc.
+
+1.  Trabajando sobre la hoja de datos, agrego filas que corresponden a transectas que se recorrieron y tuvieron 0 registros de guanaco y choique. La estructura debe ser: ...
+
+2.  Cargo datos como objeto en R con read_csv. Cargo último arvhico de resultados. Si voy a agregar el muestreo 45, debo cargar el archio de resultados que se llama 44.
+
+3.  Reviso cantidad de registros del muestreo y por estrato. Si cumplo con 30 registros mínimo en cada estrato la estimación se puede hacer por separado por estrato. Si no, tengo que hacer la estimación conjunta. Primer caso: hago lista con estrato A y B.
+
+4.  Corro los 3 modelos con la función fit.hn.uni.haz.list
+
+5.  Exploro los gráficos de datos y ajustes. Para eso uso:
+
+    ```{r}
+    cutpoints <- c(0,10,20,30,40,50,65,80,100,125,150,175,200,225,250,275,300,325,350,375,400,425,450,475,500,525,550,575,600)
+
+    plot(nombresalidadelmodelo,
+             main = paste(nombresalidadelmodelo$name.message),
+             breaks = cutpoints)
+    ```
+
+6.  Selecciono el modelo del que tomaré los resultados. Extraigo de ese los valores y los agrego al archivo resultados que cargué. Estructura debe ser: muestreo D_est SE Lcl Ucl Group_Size_est SE_grupo N_est LclN UclN est año\
+
+7.  Guardo el archivo con el número que corresponde "resultados+1.csv"\
