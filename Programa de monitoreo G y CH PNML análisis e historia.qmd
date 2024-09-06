@@ -65,7 +65,7 @@ data <- read_csv("guanacosML.csv",
 
 ## Estimación abundancia y densidad en base al método de distancia: línea-transecta.
 
-### Etapa 2007-2021. 
+### Etapa 2007-2021.
 
 #### Revisión datos.
 
