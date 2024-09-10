@@ -32,7 +32,7 @@ extract_model_data_table <- function(model){
   out[[2]] <- model$ddf$criterion
   out[[3]] <- ddf.gof(model$ddf, qq=FALSE)$dsgof$CvM$p
   out[[4]] <- summary(model)$ds$average.p
-  out[[5]] <- summary(model)$ds$average.p.se
+  out[[5]] <- summary(model)$ds$average.p.se[1]
   return(out)
 }
 
@@ -56,13 +56,38 @@ extract_model_res_table <- function(model){
   return(out)  
 }
 
-procesar_muestreo <- function(muestreo_valor, truncado_valor,data){
+procesar_muestreo <- function(data, muestreo_valor, especie, truncado_valor){
   trans <- data %>% 
+    filter(Especie == especie) %>% 
     filter(Muestreo == muestreo_valor)
-  hist(trans$distance)
+  par(mfrow = c(1,1),mar=c(3,3,2,1),cex.main=1)
+  h <- hist(trans$distance, main = paste("Muestreo ", muestreo_valor, 
+                                         "\nDistancia truncada ", truncado_valor,"m"))
   res <- fit.hn.uni.haz.list.group(trans,truncado_valor)
-  a <- map_df(res,extract_model_data_table)
-  b <- map_df(res,extract_model_res_table)
+  a <- map_df(res,extract_model_data_table) %>% 
+    mutate(Muestreo = muestreo_valor)
+  b <- map_df(res,extract_model_res_table) %>% 
+    mutate(Muestreo = muestreo_valor)
+  
+  # output plots
+  par(mar=c(2,2,0,0.2),cex.main=2)
+  layout(matrix(c(1,2,3,4,5,6,7),ncol=1),heights=c(1.5,1.1,3.4,1.1,3.4,1.1,3.4))
+  # Main title:
+  plot.new()
+  text(0.5,0.5,cex = 1.8,
+       paste("Muestreo ", muestreo_valor,"\nDistancia truncada ", truncado_valor,"m"))
+  # Panels:
+  plot.new()
+  text(0.1,0.3,"Half-normal:",cex=1.5)
+  plot(res$hn.cos,cex=1.8)
+  plot.new()
+  text(0.1,0.3,"Uniforme:",cex=1.5)
+  plot(res$uni.cos,cex=1.8)
+  plot.new()
+  text(0.1,0.3,"Hazard rate:",cex=1.5)
+  plot(res$haz.poly,cex=1.8)
+  # Restore default
+  par(mfrow = c(1,1),mar=c(3,3,2,1),cex.main=1)
   
   return(list(a = a, b = b))
 }

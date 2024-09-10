@@ -1,8 +1,9 @@
 library(tidyverse)
 
 # archivo datos preparados para ms
-data <- read_csv("guanacosML_ms.csv",
+data <- read_delim("guanacosML_ms.csv",
                  locale=locale(decimal_mark = ",", grouping_mark = "."),
+                 delim = ";",
                  col_types = cols(
                    Region.Label = col_factor(levels=c("ALTO","BAJO")),
                    Sample.Label = col_factor(),
@@ -43,6 +44,7 @@ guess_encoding("guanacosML_ms.csv")
 guess_encoding("trans14_ms.csv")
 transectas2014 <- read_delim("trans14_ms.csv",
                            locale=locale(decimal_mark = ",", grouping_mark = "."),
+                           delim = ";",
                        col_names = T,
                        col_types = cols(
                          Transecta = col_factor(NULL),
@@ -63,14 +65,16 @@ transectas2015 <- read_csv("trans15_ms.csv",
 
 guess_encoding("muestreos_ms.csv")
 library(lubridate)
-muestreos <- read_csv("muestreos_ms.csv", locale = locale(decimal_mark = ",", grouping_mark = "."),
+muestreos <- read_delim("muestreos_ms.csv", locale = locale(decimal_mark = ",",
+                                                          grouping_mark = "."),
+                      delim = ";",
                       col_types = cols(
                         est = col_factor(NULL),
                         muestreo = col_double(),
-                        año = col_double()
+                        anio = col_double()
                       )) %>% 
   rename(Muestreo = "muestreo") %>% 
-  mutate(fecha = make_date(day=dia1,month=mes1,year=año),
+  mutate(fecha = make_date(day=dia1,month=mes1,year=anio),
          season = case_when(
     mes1 %in% c(12,1) ~ "Summer",
     mes1 %in% c(3, 4) ~ "Autumn",
@@ -94,24 +98,54 @@ estratos <- read_csv("estratos_ms.csv", locale = locale(decimal_mark = ","),
 
 # Cuentas generales
 gral <- data %>% 
-  filter(Especie == "G", size > 0) %>% 
-  filter(Muestreo >19) %>% 
+  filter(Especie == "G") %>% 
+  #filter(Muestreo > 19) %>% 
   group_by(Muestreo) %>% 
-  summarise(grupos=n(), guanacos = sum(size), 
+  summarise(grupos = sum(size > 0,na.rm = T), # sum(size con cond) es como usar recuento n()
+            guanacos = sum(size, na.rm = T), 
             adultos = sum(AdultJuv,na.rm = TRUE), chu = sum(Crias,na.rm = TRUE), 
-            size_grupo = guanacos/grupos , ratio = chu/adultos) %>% 
+            size_grupo = guanacos/grupos , ratio = chu/adultos,
+            esfuerzo = sum(unique(Effort, na.rm = T),na.rm = T),
+            gr.CPUE = grupos/esfuerzo,gua.CPUE = guanacos/esfuerzo,
+            ad.CPUE = adultos/esfuerzo, chu.CPUE = chu/esfuerzo) %>% 
   left_join(muestreos, by = "Muestreo") %>% 
-  select(-dia1, -mes1, -est)
+  select(-dia1, -mes1, -est) %>% 
+  mutate(season = factor(season, levels = c("Summer","Autumn","Winter","Spring"), ordered = T))
 
-sum(gral$grupos) #4008
-mean(gral$grupos) #182.18
-sum(gral$guanacos) #34423
-mean(gral$guanacos) #1564.682
+class(gral$season)
+
+sum(gral$grupos) # desde 2015: 4008 # completo: 5859
+mean(gral$gr.CPUE) # completo 1.66 gr/km recorrido
+sum(gral$guanacos) # desde 2015: 34423 # completo: 51989
+mean(gral$gua.CPUE) # completo 14.73527 gua/km recorrido
+sum(gral$esfuerzo) # completo 3869.92 km recorridos
+sum(gral$chu) # completo: 4233 chules
+(4233/51989)*100 # 8.14% crías
+
+# sobre tamaño de grupo
+mean(gral$size_grupo) # 9.99 media de medias contando todo, tmb grupos de 1
+data %>% filter(Especie == "G",size>0) %>% summarise(mean(size)) # 8.87 registros contando grupos de 1 
+data %>% filter(Especie == "G",size>1) %>% summarise(mean(size)) # 12.9 registros si más de 2 juntos
+solos <- data %>% filter(Especie == "G") %>% 
+  group_by(Muestreo) %>% 
+  summarise(conteo_solos=sum(size==1,na.rm = T),gr_y_solos=n(),rel=conteo_solos/gr_y_solos) %>% 
+  left_join(muestreos,by="Muestreo")
+ggplot(solos)+
+  geom_point(aes(x=Muestreo,y=rel))+
+  facet_wrap(vars(season))
+ggplot(solos)+
+  geom_boxplot(aes(factor(season,levels=c("Summer","Autumn","Winter","Spring")),rel),
+               outlier.colour = "darkgray", outlier.shape = 1, fill="lightgrey")+
+  scale_x_discrete(labels=c("verano","otoño","invierno","primavera"))+
+  theme_minimal()+
+  ylim(c(0,NA))+
+  xlab("Estación")+ylab("Proporción registros de individuos solos")
+
 
 # tabla para crías
 crias <- gral %>% 
   group_by(season) %>% 
-  summarise(sum = sum(chu), media = mean(chu))
+  summarise(sum = sum(chu.CPUE), media = mean(chu.CPUE))
 
 # figura ratio chule/adultjuv por muestreo
 season_periods <- data.frame(
@@ -145,17 +179,48 @@ years <- unique(year(gral$fecha))
 season_rects <- generate_season_rects(years, season_periods)
 
 
-
+# figura ratio chu/adultjuv by tiempo
 ggplot()+
   geom_point(data = gral,aes(y = ratio, x=fecha))+
   geom_rect(data = season_rects, aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, fill = fill), alpha = 0.2) +
   scale_fill_manual(values = c("Winter" = "blue", "Summer" = "green", "Autumn" = "orange","Spring" = "red"))+
   theme_gray()
-  
+
+ggplot()+
+  geom_point(data = gral,aes(y = ratio, x=fecha))+
+  geom_rect(data = season_rects, aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, fill = fill), alpha = 0.2) +
+  scale_fill_manual(values = c("Winter" = "blue", "Summer" = "green", "Autumn" = "orange","Spring" = "red"))+
+  theme_gray()+
+  facet_wrap(vars(season))
+
+# y boxplot por estaciones
+ggplot(gral,aes(season,ratio))+
+  geom_boxplot(outlier.colour = "darkgray", outlier.shape = 1, fill="lightgrey")+
+  scale_x_discrete(labels=c("verano","otoño","invierno","primavera"))+
+  xlab("Estación")+ylab("Razón crías/adultos")+
+  theme_minimal()
+
+
+# figura chu y adultjuv por UE by time
+ggplot()+
+  geom_point(data = gral,aes(y = ad.CPUE, x=fecha),shape=15, size=2)+
+  geom_point(data = gral,aes(y = chu.CPUE, x=fecha))+
+  geom_rect(data = season_rects, aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, fill = fill), alpha = 0.2) +
+  scale_fill_manual(values = c("Winter" = "blue", "Summer" = "green", "Autumn" = "orange","Spring" = "red"))+
+  theme_gray()  
+
+
 # figura size por muestreo
 ggplot()+
   geom_point(data=gral,aes(y = guanacos, x=fecha),shape=18, size=3)+
   geom_point(data=gral,aes(y = grupos,x=fecha))+
+  geom_rect(data = season_rects, aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, fill = fill), alpha = 0.2) +
+  scale_fill_manual(values = c("Winter" = "blue", "Summer" = "green", "Autumn" = "orange","Spring" = "red"))+
+  theme_gray()
+
+ggplot()+
+  geom_point(data=gral,aes(y = gua.CPUE, x=fecha),shape=18, size=3)+
+  geom_point(data=gral,aes(y = size_grupo,x=fecha))+
   geom_rect(data = season_rects, aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, fill = fill), alpha = 0.2) +
   scale_fill_manual(values = c("Winter" = "blue", "Summer" = "green", "Autumn" = "orange","Spring" = "red"))+
   theme_gray()
@@ -168,20 +233,67 @@ ggplot()+
   scale_fill_manual(values = c("Winter" = "blue", "Summer" = "green", "Autumn" = "orange","Spring" = "red"))+
   theme_gray()
 
+ggplot()+
+  geom_point(data=gral,aes(y=size_grupo,x=fecha))+
+  ylim(c(0,18))+
+  geom_rect(data = season_rects, aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, fill = fill), alpha = 0.2) +
+  scale_fill_manual(values = c("Winter" = "blue", "Summer" = "green", "Autumn" = "orange","Spring" = "red"))+
+  theme_gray()+
+  facet_wrap(vars(season))
+
+
+left_join(data,muestreos,by = "Muestreo") %>%
+  filter(Especie == "G",size > 1 ) %>% 
+  ggplot()+
+  geom_boxplot(aes(y=size,x=Muestreo, group = Muestreo),
+               outlier.colour = "darkgray", outlier.shape = 1, fill = "lightgray")+
+  ylim(c(0,254))+ #máximo size guanacos 254
+  theme_minimal()+
+  facet_wrap(vars(season))
+
+left_join(data,muestreos,by = "Muestreo") %>%
+  filter(Especie == "G",size > 1 ) %>% 
+  ggplot()+
+  geom_boxplot(aes(y=size,x=Muestreo, group = Muestreo),
+               outlier.colour = "pink", outlier.shape = 19, fill = "lightgray")+
+  ylim(c(0,15))+
+  theme_minimal()+
+  facet_grid(~factor(season,levels=c("Summer","Autumn","Winter","Spring")))
+
+# boxplot con datos originales en data
+left_join(data,muestreos,by = "Muestreo") %>%
+  filter(Especie == "G",size > 1 ) %>% 
+  ggplot(aes(season,size))+
+  geom_boxplot(outlier.colour = "darkgray", outlier.shape = 1, fill = "lightgray")+
+  #scale_y_continuous(limits = c(0,30))+
+  scale_x_discrete(labels=c("verano","otoño","invierno","primavera"))+
+  xlab("Estación")+ylab("Tamaño de grupo")+
+  theme_minimal()
+
+#boxplot con datos ya interpretados por muestreo
+ggplot(gral,aes(season,size_grupo))+
+  geom_boxplot(outlier.colour = "darkgray", outlier.shape = 1, fill = "lightgray")+
+  scale_y_continuous(limits = c(0,20))+
+  scale_x_discrete(labels=c("verano","otoño","invierno","primavera"))+
+  xlab("Estación")+ylab("Tamaño de grupo")+
+  theme_minimal()
+
+
 # esfuerzo muestreo y transecta
-effort <- data %>% 
-  filter(Muestreo > 19) %>% 
-  group_by(Muestreo, Sample.Label) %>% 
-  summarise(eff = max(Effort,na.rm = TRUE))
+# esfuerzo recorrido
+esf_detal <- data %>%
+  filter(Especie=="G") %>% 
+  group_by(Muestreo,Sample.Label) %>% summarise(esf=mean(Effort,na.rm = T))
 
-effort_muestreo <- effort %>% 
-  filter(eff !="-Inf") %>% 
-  group_by(Muestreo) %>% 
-  summarise(eff = sum(eff))
+esf_muestreo <- esf_detal %>% 
+  group_by(Muestreo) %>% summarise(eff = sum(esf,na.rm = T)) %>%  
+  left_join(muestreos,by="Muestreo") %>% 
+  select(Muestreo, eff, fecha,season)
 
-sum(effort_muestreo$eff) #2754.8 Km
-range(effort_muestreo$eff) # entre 66.5 y 136.5
-mean(effort_muestreo$eff) #125.22 km
+
+sum(esf_muestreo$eff) # 4934.32
+range(esf_muestreo$eff) # entre 35.17 y 153.5
+mean(esf_muestreo$eff) #120.35 km
 
 # figura de timeline
 
@@ -193,20 +305,20 @@ ggplot(muestreos, aes(x = month(fecha), y = year(fecha))) +
                                "Winter" = "skyblue", "Spring" = "lightgreen")) +
   scale_y_reverse(breaks = seq(2007,2023, by=1)) +
   geom_hline(yintercept = 2014.55,linetype = "dashed", col = "darkgrey",linewidth=1)+
-  labs(title = "Sampling events",
-       x = "Month",y = "Year", fill= "Season") +
+  labs(title = "Monitoreo de guanacos PNML - 2007 a 2023",
+       x = "Mes",y = "Año", fill= "Season") +
   theme_minimal()+
   theme(panel.grid.major = element_blank(),  # Remove grid lines for clarity
         axis.text.y = element_text(size = 10)) 
 
 
-# trabajo con muestreo 20 en adelante (2015 en adelante)
-data_r <- data %>% 
-  filter(Especie == "G") %>% 
-  filter(Muestreo > 19)
+
+data_G <- data %>% 
+  filter(Especie == "G")
+
 # exploro qué pasa con las zonas alta y baja
 # si hay registros suficientes como para tratarlo como áreas diferentes
-registros <- data_r %>% 
+registros <- data_G %>% 
   filter(size > 0) %>% 
   group_by(Muestreo, Region.Label) %>% 
   summarise(
@@ -221,13 +333,34 @@ registros %>% filter(n < 30)
 # Region.Label pasa a ser ML con el área total
 # los estratos pasan a ser la columna stratum y eventualmente: formula = ~stratum
 
-boxplot(data_r$distance~data_r$stratum, xlab="estrato", ylab="Distance (m)")
-boxplot(data_r$distance~data_r$Muestreo, xlab="sampling event", ylab="Distance (m)")
-ggplot(data_r,aes(distance, muestreo, fill = stratum))+
+boxplot(data_G$distance~data_G$stratum, xlab="estrato", ylab="Distance (m)") # completo
+boxplot(data_G$distance~data_G$Muestreo, xlab="sampling event", ylab="Distance (m)") # completo
+
+ggplot(data_G,aes(distance, stratum))+
+  geom_vline(xintercept = 400,col="pink",lty=2,lwd=1.5)+
+  geom_boxplot(outlier.colour = "darkgray", outlier.shape = 1, 
+               position = position_dodge(.9))+
+  scale_x_continuous(limits = c(NA,999))+
+  xlab("distancia (m)")+
+  theme_minimal()
+
+ggplot(data_G,aes(distance, muestreo))+
+  geom_vline(xintercept = 400,col="pink",lty=2,lwd=1.5)+
+  geom_boxplot(outlier.colour = "darkgray", outlier.shape = 1, 
+               position = position_dodge(.9))+
+  scale_x_continuous(limits = c(NA,999))+
+  xlab("distancia (m)")+
+  theme_minimal()
+
+
+ggplot(data_G,aes(distance, muestreo, fill = stratum))+
  geom_boxplot(outlier.colour = "darkgray", outlier.shape = 1, 
               position = position_dodge(.9))+
   scale_x_continuous(limits = c(NA,999))+
   theme_minimal()
+
+
+
   
 # Se ve que no hay una diferencia clara en lo que pasa en los estratos
 # a priori no parece necesario estratificar
