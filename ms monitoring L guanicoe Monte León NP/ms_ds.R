@@ -68,8 +68,18 @@ res_1a42 <- map_df(lista_muestreos,~procesar_muestreo(data = data_G,
 
 write.csv(res_1a42,"res_1a42.csv")
 
+res_1a41_600 <- map_df(lista_muestreos,~procesar_muestreo(data = data_G,
+                                                      muestreo_valor = .x,
+                                                      especie = "G",
+                                                      truncado_valor = 600))
+
+
 # resultados período completo
 ggplot(res_1a42)+
+  geom_point(aes(x=a$Muestreo,y=b$D_est,col=a$key))+
+  theme_minimal()
+
+ggplot(res_1a41_600)+
   geom_point(aes(x=a$Muestreo,y=b$D_est,col=a$key))+
   theme_minimal()
 
@@ -85,8 +95,18 @@ res_1a42_clean <- res_1a42 %>%
   mutate(Muestreo = b$Muestreo) %>% 
   left_join(muestreos, by="Muestreo")
 write.csv(res_1a42_clean,"res_1a42_clean.csv")
+#res_1a42_clean <- read_csv("res_1a42_clean.csv")
 
-ggplot(res_1a42_clean,aes(x=fecha,y=b$D_est))+
+res_1a41_600_clean <- res_1a41_600 %>% 
+  filter(complete.cases(a$AIC,a$CvonM_p,a$P_enc_medio,a$SE_P_enc_medio)) %>% 
+  filter(a$CvonM_p > 0.05) %>% 
+  group_by(a$Muestreo) %>% 
+  slice_min(order_by = a$AIC) %>% 
+  mutate(Muestreo = b$Muestreo) %>% 
+  left_join(muestreos, by="Muestreo")
+write.csv(res_1a41_600_clean,"res_1a41_600_clean.csv")
+
+ggplot(res_1a41_600_clean,aes(x=fecha,y=b$D_est))+
   geom_point(aes(col = a$key))+
   #geom_smooth(aes(x=a$Muestreo,y=b$D_est))+
   geom_ribbon(aes(ymin = b$Lcl, ymax = b$Ucl), alpha = 0.2)+
@@ -94,10 +114,10 @@ ggplot(res_1a42_clean,aes(x=fecha,y=b$D_est))+
   facet_wrap(vars(season))
 
 res_1a42_clean %>% filter(season == "Autumn"|season=="Spring") %>% 
-ggplot(aes(x=fecha,y=b$D_est))+
+ggplot(aes(x=fecha,y=b.D_est))+ #b.D_est
   geom_point()+
   #geom_smooth(aes(x=a$Muestreo,y=b$D_est))+
-  geom_ribbon(aes(ymin = b$Lcl, ymax = b$Ucl), alpha = 0.2)+
+  geom_ribbon(aes(ymin = b.Lcl, ymax = b.Ucl), alpha = 0.2)+
   theme_minimal()+
   theme(legend.position = "none")+
   ylab(expression("Densidad de guanacos (" ~ km^2*")"))+
