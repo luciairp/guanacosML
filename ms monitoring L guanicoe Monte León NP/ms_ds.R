@@ -59,19 +59,55 @@ check_data <- data_old %>% group_by(Sample.Label,Muestreo) %>% reframe(n(),uniqu
 ggplot(res_1a19)+
   geom_point(aes(x=a$Muestreo,y=b$D_est,col=a$key))+
   theme_minimal()
-  
+
+
+# posta -------------------------------------------------------------------
+# período completo muestreos 1:41
+# truncado a 400 y 600
+# calcula individuos - usando valores estimados de grupo
+
 lista_muestreos <- c(1:41)
 res_1a42 <- map_df(lista_muestreos,~procesar_muestreo(data = data_G,
                                                       muestreo_valor = .x,
                                                       especie = "G",
-                                                      truncado_valor = 400))
+                                                      truncado_valor = 400,
+                                                      usar_grupo = F))
 
 write.csv(res_1a42,"res_1a42.csv")
 
 res_1a41_600 <- map_df(lista_muestreos,~procesar_muestreo(data = data_G,
                                                       muestreo_valor = .x,
                                                       especie = "G",
-                                                      truncado_valor = 600))
+                                                      truncado_valor = 600,
+                                                      usar_grupo = F))
+
+# truncado a 400 m
+# estima grupos (tendré que calcular después la densidad)
+res_1a42_grupos <- map_df(lista_muestreos,~procesar_muestreo(data = data_G,
+                                                      muestreo_valor = .x,
+                                                      especie = "G",
+                                                      truncado_valor = 400,
+                                                      usar_grupo = T))
+
+write.csv(res_1a42_grupos,"res_1a42_grupos.csv")
+
+##### prueba grupos #####
+
+data_r <- data_G %>% filter(Muestreo == 20)
+conversion.factor <- convert_units("Meter", "Kilometer", "Square kilometer")
+prueba_T <- ds(data_r, trun=400, key="hn", adj="cos", dht_group = T,
+                    max_adjustments = 3, monotonicity = "strict", 
+               convert_units = conversion.factor)
+prueba_F <- ds(data_r, trun=400, key="hn", adj="cos", dht_group = F,
+               max_adjustments = 3, monotonicity = "strict", 
+               convert_units = conversion.factor)
+# por algún motivo las salidas de dht_group T or F son idénticas
+# sospecho un inconveniente con la distribución de la variable size
+# busco extraer información de clusters, y hacer manualmente la regla de tres
+# para calcular las abundancias y densidades de individuos
+# para eso modifico las funciones de extracción de información para clusters
+
+##### fin prueba grupos ####
 
 
 # resultados período completo
@@ -93,7 +129,10 @@ res_1a42_clean <- res_1a42 %>%
   group_by(a$Muestreo) %>% 
   slice_min(order_by = a$AIC) %>% 
   mutate(Muestreo = b$Muestreo) %>% 
-  left_join(muestreos, by="Muestreo")
+  left_join(muestreos, by="Muestreo") %>% 
+  left_join(descr_grupo, by="Muestreo") %>% 
+  # agrego columnas interpretadas según mediana de grupos:
+  mutate()
 write.csv(res_1a42_clean,"res_1a42_clean.csv")
 #res_1a42_clean <- read_csv("res_1a42_clean.csv")
 

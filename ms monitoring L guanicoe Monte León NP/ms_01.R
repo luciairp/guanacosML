@@ -80,7 +80,9 @@ muestreos <- read_delim("muestreos_ms.csv", locale = locale(decimal_mark = ",",
     mes1 %in% c(3, 4) ~ "Autumn",
     mes1 %in% c(6, 7, 8) ~ "Winter",
     mes1 %in% c(9,10) ~ "Spring"
-  ))
+  )) %>% 
+  mutate(season = factor(season, levels = c("Summer","Autumn","Winter","Spring"), ordered = T))
+
 
 guess_encoding("estratos_ms.csv")
 estratos <- read_csv("estratos_ms.csv", locale = locale(decimal_mark = ","),
@@ -250,6 +252,19 @@ left_join(data,muestreos,by = "Muestreo") %>%
   ylim(c(0,254))+ #máximo size guanacos 254
   theme_minimal()+
   facet_wrap(vars(season))
+
+left_join(data,muestreos,by = "Muestreo") %>%
+  filter(Especie == "G",size > 1 ) %>% 
+  ggplot()+
+  geom_boxplot(aes(y=size,x=Muestreo, group = Muestreo),
+               outlier.colour = "darkgray", outlier.shape = 1, fill = "lightgray")+
+  ylim(c(0,254))+ #máximo size guanacos 254
+  theme_minimal()
+
+descr_grupo <- data %>% group_by(Muestreo) %>% summarise(
+  media_grupo = mean(size,na.rm = TRUE), 
+  mediana_grupo = median(size,na.rm = TRUE)
+)
 
 left_join(data,muestreos,by = "Muestreo") %>%
   filter(Especie == "G",size > 1 ) %>% 

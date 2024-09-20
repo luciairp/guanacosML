@@ -3,16 +3,20 @@ creci <- tibble(
   Muestreo = res_1a42_clean$Muestreo,
   fecha = res_1a42_clean$fecha,
   season = res_1a42_clean$season,
-  N = res_1a42_clean$b$N_est,
-  Nlcl = res_1a42_clean$b$LclN,
-  Nucl = res_1a42_clean$b$UclN,
-  D = res_1a42_clean$b$D_est,
-  DSE = res_1a42_clean$b$SE,
-  Dlcl = res_1a42_clean$b$Lcl,
-  Ducl = res_1a42_clean$b$Ucl
+  N = res_1a42_clean$b.N_est,
+  Nlcl = res_1a42_clean$b.LclN,
+  Nucl = res_1a42_clean$b.UclN,
+  D = res_1a42_clean$b.D_est,
+  DSE = res_1a42_clean$b.SE,
+  Dlcl = res_1a42_clean$b.Lcl,
+  Ducl = res_1a42_clean$b.Ucl,
+  Grupo = res_1a42_clean$b.Group_Size_est,
+  GrupoES = res_1a42_clean$b.SE_grupo
 ) %>% 
   mutate(logN = log(N),
-         logNlcl = log(Nlcl), logNucl = log(Nucl)) 
+         logNlcl = log(Nlcl), logNucl = log(Nucl)) %>% 
+  mutate(season = factor(season, levels = c("Summer","Autumn","Winter","Spring"), ordered = T))
+
 
   
 # figura con N estimado
@@ -37,6 +41,26 @@ ggplot(creci,aes(x=fecha,y=logN))+
   ylab("Log Abundancia")+xlab("Fecha")+
   theme_minimal()+
   coord_cartesian(ylim = c(0,15))
+
+# tamaño de grupo estimado
+ggplot(creci,aes(x=fecha,y=Grupo))+
+  geom_point()+
+  geom_ribbon(aes(ymin = Grupo-GrupoES, ymax = Grupo+GrupoES), alpha = 0.2)+
+  ggtitle("Tamaño de grupo estimado y error estándar \nPeríodo 2007-2023") +
+  ylab("Tamaño de grupo")+xlab("Fecha")+
+  theme_minimal()+
+  facet_wrap(vars(season))+
+  coord_cartesian(ylim = c(0,20))
+
+ggplot(creci, aes(Grupo,season))+
+  geom_boxplot()
+
+ggplot(creci,aes(season,Grupo))+
+  geom_boxplot(outlier.colour = "darkgray", outlier.shape = 1, fill = "lightgray")+
+  scale_y_continuous(limits = c(0,20))+
+  scale_x_discrete(labels=c("verano","otoño","invierno","primavera"))+
+  xlab("Estación")+ylab("Tamaño de grupo")+
+  theme_minimal()
 
 # fabrico información de tasa de crecimiento lambda
 # muestreo a muestreo
